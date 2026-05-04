@@ -1,0 +1,15 @@
+# uv / venv
+.venv/
+.uv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Generated datasets (never check binaries into git)
+data/raw/
+data/processed/
+data/*/
+
+# Notebooks output
+.ipynb_checkpoints/

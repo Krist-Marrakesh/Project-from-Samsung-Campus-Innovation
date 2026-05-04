@@ -1,0 +1,45 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Backend (standalone Spring Boot module)
+/backend/build/
+/backend/.gradle/
+/backend/out/
+/backend/data/
+
+# ML pipeline (standalone Python project)
+/ml/.venv/
+/ml/.uv/
+/ml/__pycache__/
+/ml/**/__pycache__/
+/ml/.pytest_cache/
+/ml/data/
+/ml/runs/
+/ml/src/*.egg-info/
+
+# Build outputs and IDE state — caught by /build above for the Android module,
+# repeated here explicitly for module-local builds (e.g. `cd ml && pytest`
+# leaves coverage artefacts in ml/.coverage*).
+/ml/.coverage*
+/ml/htmlcov/
+/backend/build/reports/
+*.log
+*.hprof
+
+# OS/editor litter that slips past the top-of-file rules.
+**/.DS_Store
+*.swp
+*.swo

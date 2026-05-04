@@ -1,0 +1,120 @@
+# research-v1 — synthetic benchmark for inverse fractal inference.
+#
+# Five splits answer five distinct questions:
+#
+#   train      — main training distribution. Standard parameter ranges per
+#                family. Large enough that a CNN can learn the family
+#                signatures and the Julia-c regression on the same data.
+#
+#   val        — same distribution as train, disjoint sample set. Used for
+#                early stopping and Optuna pruning.
+#
+#   test       — held-out, same distribution. The headline accuracy /
+#                MAE / reconstruction numbers come from this split.
+#
+#   near_ood   — parameter ranges shifted slightly outside train. Tests
+#                whether the model's family classification and parameter
+#                regression generalise just past the edge of what it has
+#                seen. Useful for argued statements about robustness.
+#
+#   hard_overlap — adversarial corner cases. Multibrot with N=2 (which IS
+#                Mandelbrot up to the multibrot formula path), and Julia
+#                with c near 0+0i (which collapses to a near-empty Julia
+#                set, hard to distinguish from "Mandelbrot at default
+#                viewport"). The point of this split is to expose where
+#                the inverse-inference task is genuinely ambiguous, not
+#                to claim the model solves it.
+#
+# Reproducibility: identical seed + identical YAML produces byte-identical
+# recipe streams. Per-split seeds are derived from `seed` plus a stable
+# 32-bit hash of the split name (see dataset_config.split_seed), so
+# reordering / adding / removing splits leaves the others unaffected.
+
+name: research-v1
+seed: 42
+
+render:
+  width_px: 128
+  height_px: 128
+  samples_per_axis: 1
+
+palettes:
+  - grayscale
+  - fire
+  - ocean
+  - rainbow_cyclic
+
+color_modes:
+  - linear
+  - histogram
+  - distance_estimate
+
+families:
+  - name: mandelbrot
+    escape_radius: 2.0
+    smoothing: true
+    ranges:
+      max_iter: [200, 500]
+      span:     [2.0, 3.0]
+
+  - name: julia
+    escape_radius: 2.0
+    smoothing: true
+    ranges:
+      max_iter: [200, 500]
+      span:     [2.5, 3.5]
+      c_re:     [-1.5, 1.5]
+      c_im:     [-1.5, 1.5]
+
+  - name: burning_ship
+    escape_radius: 2.0
+    smoothing: true
+    ranges:
+      max_iter: [200, 500]
+      span:     [2.5, 3.5]
+
+  - name: multibrot
+    escape_radius: 2.0
+    smoothing: true
+    ranges:
+      max_iter: [200, 500]
+      span:     [2.5, 3.5]
+      exponent: [3, 6]   # exclude N=2 from the in-distribution split
+
+splits:
+  - name: train
+    examples_per_family: 1000
+
+  - name: val
+    examples_per_family: 200
+
+  - name: test
+    examples_per_family: 200
+
+  - name: near_ood
+    # maxIter pushed below and above the training range; multibrot exponent
+    # extends to 7. Family-by-family overrides; everything else inherits.
+    examples_per_family: 200
+    family_overrides:
+      mandelbrot:
+        max_iter: [80, 700]
+      julia:
+        max_iter: [80, 700]
+      burning_ship:
+        max_iter: [80, 700]
+      multibrot:
+        max_iter: [80, 700]
+        exponent: [4, 8]
+
+  - name: hard_overlap
+    # Two adversarial subsets: multibrot at N=2 (visually Mandelbrot) and
+    # Julia near c=0 (visually trivial filled disk). Other families
+    # excluded — restrict_to_overrides skips families with no entry.
+    examples_per_family: 200
+    restrict_to_overrides: true
+    family_overrides:
+      multibrot:
+        exponent: [2, 2]
+      julia:
+        c_re: [-0.05, 0.05]
+        c_im: [-0.05, 0.05]

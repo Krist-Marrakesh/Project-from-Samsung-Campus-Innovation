@@ -1,0 +1,36 @@
+zonky:
+  test:
+    database:
+      provider: zonky
+
+spring:
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+app:
+  storage:
+    renders-root: ${java.io.tmpdir}/fractalov-test-renders
+  ml:
+    # ML server isn't running during integration tests; the only requirement
+    # for context startup is that MlProperties validates. The Java MlClient
+    # is constructed but never invoked unless a test specifically calls /ml/*.
+    enabled: false
+    url: http://localhost:9999
+    timeout-ms: 1000
+  jobs:
+    worker-pool-size: 1
+    poll-interval-ms: 200
+    sse-heartbeat-seconds: 5
+  bench:
+    # /bench/* endpoints are research-only — disabled by default, enabled here
+    # so the (future) benchmark integration tests can hit them. In production
+    # builds leave this unset.
+    enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.fractalov.backend: INFO
+    org.flywaydb: WARN

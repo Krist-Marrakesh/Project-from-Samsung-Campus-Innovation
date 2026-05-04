@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext HTTP allowed for development. The Android client talks to a
+    locally-running Java backend (AVD emulator at 10.0.2.2, physical
+    device at the dev Mac's LAN IP, or via `adb reverse` to localhost).
+    None of these are reachable through HTTPS in dev.
+
+    For a production release this file should be replaced by a build-
+    variant override that flips `cleartextTrafficPermitted` to false.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
