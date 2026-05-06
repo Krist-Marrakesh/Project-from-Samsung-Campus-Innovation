@@ -91,6 +91,24 @@ Successful jobs end with `renderId` and `imageUrl` populated — the artefact is
 
 On validation failure for `/render`, the handler returns HTTP 400 with `ErrorResponse { requestId, error, message, details[] }`. `/validate-recipe` always returns HTTP 200 with `ValidationResponse { valid, errors[] }`.
 
+### Research benchmarks (Slice 1)
+
+| Method | Path                          | Purpose                                                  |
+|--------|-------------------------------|----------------------------------------------------------|
+| POST   | `/bench/compare`              | Scalar vs optimised Mandelbrot kernel head-to-head       |
+| GET    | `/bench/scenarios`            | Catalogue of preset names + collections                  |
+| POST   | `/bench/matrix`               | Run an explicit list of scenarios → per-stage breakdown  |
+| POST   | `/bench/matrix-from-presets`  | Run a built-in scenario collection (`research`, `full`)  |
+
+> ⚠️ **`/bench/*` endpoints are unauthenticated and run uncapped CPU-intensive code.** They exist for the research-report generation pipeline and are NOT safe to expose on a publicly reachable backend. They are gated behind `app.bench.enabled` (env var `FRACTALOV_BENCH_ENABLED`); the default is **off**, and the controller bean is removed entirely (so the routes return 404 rather than rejecting at request time) when the flag is unset. Flip the flag only on dev / CI machines:
+>
+> ```bash
+> cd backend
+> FRACTALOV_BENCH_ENABLED=true ./gradlew bootRun
+> ```
+>
+> The pivot script `backend/scripts/run-matrix.sh` consumes `/bench/matrix-from-presets`.
+
 ## Fractal families
 
 | `fractalType`   | Formula                                         | Extra params           |

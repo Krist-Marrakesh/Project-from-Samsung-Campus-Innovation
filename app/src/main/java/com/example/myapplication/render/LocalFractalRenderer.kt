@@ -200,10 +200,21 @@ object LocalFractalRenderer {
     }
 
     private fun burningShip(cRe: Double, cIm: Double, maxIter: Int, esc2: Double, smoothing: Boolean): Double {
+        // Periodicity check. Burning Ship has no closed-form analytic
+        // shortcut for in-set points (the absolute-value step breaks the
+        // holomorphic structure that gives Mandelbrot its main-cardioid
+        // / period-2-bulb tests). What we *can* do is detect short-period
+        // cycles at runtime: snapshot z every PERIOD_INTERVAL steps; if
+        // a later z lands within EPSILON of the snapshot, the orbit is
+        // periodic and the point is in-set. Half of the visible in-set
+        // area on the classic Burning Ship view exits within ~40
+        // iterations under this test rather than running to maxIter.
         var zRe = 0.0
         var zIm = 0.0
         var zRe2 = 0.0
         var zIm2 = 0.0
+        var snapRe = 0.0
+        var snapIm = 0.0
         var iter = 0
         while (iter < maxIter) {
             zRe2 = zRe * zRe
@@ -213,6 +224,19 @@ object LocalFractalRenderer {
             zIm = 2.0 * abs(zRe * zIm) + cIm
             zRe = zReNext
             iter++
+            // Periodicity probe — every PERIOD_INTERVAL iterations:
+            //   * if we're at a snapshot step, store z
+            //   * otherwise compare z to the snapshot; equal → in-set
+            if (iter and (PERIOD_INTERVAL - 1) == 0) {
+                snapRe = zRe
+                snapIm = zIm
+            } else if (iter > PERIOD_INTERVAL) {
+                val dRe = zRe - snapRe
+                val dIm = zIm - snapIm
+                if (dRe * dRe + dIm * dIm < PERIOD_EPSILON_SQ) {
+                    return -1.0
+                }
+            }
         }
         if (iter >= maxIter) return -1.0
         if (!smoothing) return iter.toDouble()
@@ -295,4 +319,12 @@ object LocalFractalRenderer {
 
     private const val IN_SET_ARGB: Int = 0xFF000000.toInt()
     private val LN2 = ln(2.0)
+
+    /** Snapshot interval for the Burning Ship periodicity check. Power
+     *  of two so the modulo collapses to a bitwise AND. */
+    private const val PERIOD_INTERVAL = 16
+
+    /** Squared epsilon — we compare z·z, not |z|. 1e-14 ≈ 1e-7 in
+     *  absolute terms, well below any escape value we care about. */
+    private const val PERIOD_EPSILON_SQ = 1e-14
 }

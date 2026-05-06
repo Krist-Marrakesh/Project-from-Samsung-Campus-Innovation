@@ -43,7 +43,22 @@ uv run fractalov-ml --help   # CLI entry point (typer)
 
 ## Commands
 
-The single CLI exposes three commands; everything else lives in importable modules.
+The CLI exposes two parallel pipelines that **share the inference server but
+are NOT interchangeable upstream**:
+
+> ⚠️ **v1 (Stage 5/6) and v2 (Slice 2/3/4) datasets have different on-disk
+> layouts and different training loops.** Picking the wrong combination
+> produces a confusing schema error rather than a silent miss-train.
+>
+> | Pipeline | Dataset cmd | Layout | Train cmd | Compatible? |
+> |---|---|---|---|---|
+> | **v1 (legacy)** | `generate` + `split` | `labels.parquet` + separate `splits.parquet` | `train` / `tune` / `eval` / `reconstruct` | ❌ does not work with v2 trainer |
+> | **v2 (current research)** | `build-dataset` | single `labels.parquet` with `split` column + `dataset-manifest.json` | `train-v2` / `tune-v2` / `eval-v2` | ❌ does not work with v1 trainer |
+>
+> The two share `serve` (FastAPI inference, Stage 7) only because both
+> emit the same `FractalCNN`-shaped checkpoint format. The Slice 4
+> uncertainty heads on `FractalCNNv2` need a v2 checkpoint at the
+> serving side; the current `serve` command still loads v1 by default.
 
 ### `generate` — call the backend, build a dataset
 

@@ -44,4 +44,11 @@ packages = ["src/fractalov_ml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# ``-q`` keeps the per-file dot output short. ``-m "not slow"`` excludes
+# the integration tests by default — they spin a tiny dataset and run
+# real training, ~5–15 s on CPU. Run them explicitly with
+# ``pytest -m slow`` or ``pytest -m "not slow or slow"``.
+addopts = "-q -m 'not slow'"
+markers = [
+    "slow: integration tests that run real training. Excluded by default.",
+]

@@ -94,7 +94,6 @@ fun HomeScreen(
                         widthPx = done.widthPx,
                         heightPx = done.heightPx,
                         renderMs = done.renderMs,
-                        isLowRes = done.isLowRes,
                     )
                     Text(
                         text = "Pinch to zoom · drag to pan · pixels re-computed on device.",
@@ -161,11 +160,10 @@ private fun Hero() {
 }
 
 @Composable
-private fun RenderStats(widthPx: Int, heightPx: Int, renderMs: Long, isLowRes: Boolean) {
+private fun RenderStats(widthPx: Int, heightPx: Int, renderMs: Long) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         StatChip(label = "size", value = "${widthPx}×${heightPx}")
         StatChip(label = "render", value = "$renderMs ms")
-        StatChip(label = "tier", value = if (isLowRes) "live" else "high")
     }
 }
 

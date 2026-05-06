@@ -76,6 +76,11 @@ def _build_trial_cfg(
     c_weight = trial.suggest_float("c_weight", 0.05, 5.0, log=True)
     exp_weight = trial.suggest_float("exp_weight", 0.05, 5.0, log=True)
     vp_weight = trial.suggest_float("vp_weight", 0.05, 2.0, log=True)
+    # Linear (not log) range with a 0.0 anchor — Optuna's TPE handles
+    # mixed log/linear search spaces fine, and a flat 0.0 sample at the
+    # bottom is the "no SupCon" baseline that we genuinely want the
+    # study to consider, not just a small positive value approximating it.
+    contrastive_weight = trial.suggest_float("contrastive_weight", 0.0, 2.0)
     base_channels = trial.suggest_categorical("base_channels", [16, 32, 48])
     enable_augmentation = trial.suggest_categorical("enable_augmentation", [False, True])
 
@@ -90,6 +95,7 @@ def _build_trial_cfg(
         c_weight=c_weight,
         exp_weight=exp_weight,
         vp_weight=vp_weight,
+        contrastive_weight=contrastive_weight,
         base_channels=base_channels,
         enable_augmentation=enable_augmentation,
         # Generous patience inside short trials — let the scheduler matter; the

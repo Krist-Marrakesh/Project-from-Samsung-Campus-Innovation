@@ -44,6 +44,17 @@ palettes:
   - ocean
   - rainbow_cyclic
 
+# Colour-mode pool sampled per recipe. ``distance_estimate`` is a Slice 0
+# addition that uses the per-pixel DE field rather than escape time.
+#
+# IMPORTANT: ``distance_estimate`` is silently downgraded to ``linear``
+# whenever the family is ``burning_ship``. Burning Ship's ``|·|`` step is
+# non-holomorphic, the formal derivative ``dz/dc`` is undefined on the
+# coordinate axes, and the standard distance estimator does not apply.
+# The sampler in :mod:`fractalov_ml.recipes_v2` enforces this fallback so
+# every emitted recipe stays renderable on the backend; the Java
+# :class:`Colorizer` also defends against an unsupported DE field by
+# falling back to the LINEAR colour map.
 color_modes:
   - linear
   - histogram

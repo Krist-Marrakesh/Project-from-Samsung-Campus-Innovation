@@ -92,12 +92,16 @@ def test_best_params_v2_round_trips(tmp_path: Path, monkeypatch) -> None:
     loaded = load_best_params_v2(tcfg.out_dir)
     assert loaded == summary["best_params"]
     # Search-space coverage: every tunable knob must appear in the dict.
+    # If you add a knob to tune_v2._build_trial_cfg, add it here too — this
+    # is the only test that catches a forgotten ``trial.suggest_*`` call.
     expected_keys = {
         "learning_rate",
         "weight_decay",
         "batch_size",
         "c_weight",
         "exp_weight",
+        "vp_weight",
+        "contrastive_weight",
         "base_channels",
         "enable_augmentation",
     }

@@ -1,3 +1,5 @@
+
+
 # fractalov — research report
 
 A self-contained write-up of the fractalov project across stages 1–9. The audience is graduate-school admissions and any reviewer who wants to know what was actually built, what was measured, and what's still open.

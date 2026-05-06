@@ -88,4 +88,32 @@ class ColorizerTest {
             }
         }
     }
+
+    @Test
+    void histogramCacheProducesIdenticalImageForRepeatedInput() {
+        // Two independent maps with the same content must produce
+        // byte-identical images. If the LUT cache is wrong (stale
+        // thresholds, wrong key hashing), this is the test that
+        // catches it: same input → same output, regardless of whether
+        // the second call hit the cache or recomputed.
+        double[][] mapA = new double[16][16];
+        double[][] mapB = new double[16][16];
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                double v = (x * 13 + y * 7) % 100;
+                mapA[y][x] = v;
+                mapB[y][x] = v;
+            }
+        }
+        BufferedImage first = colorizer.colorize(mapA, 100, grayscale, ColorMode.HISTOGRAM);
+        BufferedImage second = colorizer.colorize(mapB, 100, grayscale, ColorMode.HISTOGRAM);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                assertEquals(
+                        first.getRGB(x, y),
+                        second.getRGB(x, y),
+                        "cache produced different colour at (" + x + "," + y + ")");
+            }
+        }
+    }
 }

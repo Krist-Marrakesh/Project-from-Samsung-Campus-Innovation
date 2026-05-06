@@ -18,7 +18,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,32 +35,31 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.myapplication.domain.Viewport
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
- * Pinch-zoomable, drag-pannable fractal preview with **overrender margin**.
+ * Pinch-zoomable, drag-pannable fractal preview.
  *
- * The bitmap supplied in ``bitmap`` was rendered at a viewport
- * ``overrenderFactor`` times wider/taller than what the user is
- * supposed to see. The Image is sized to that overrendered area
- * (centred over the canvas Box, clipped by the Box's bounds), so:
+ * Strategy: **optical only during gesture, single render on release**.
  *
- *   * In rest, the user sees only the central portion of the bitmap
- *     — exactly the recipe's logical viewport.
- *   * Dragging in any direction up to ``(overrenderFactor - 1) / 2``
- *     of canvas size pulls in pixels that were already rendered into
- *     the margin. There is no "grey edge of the world".
- *   * Pinch + drag still trigger a re-render via ``onCommitViewport``
- *     after a brief debounce; the new bitmap fully replaces the old
- *     one with a fresh overrender margin around the new viewport.
+ * While at least one finger is on the canvas, every motion updates the
+ * local ``scale`` and ``offset`` state which drive a
+ * :func:`Modifier.graphicsLayer` transform. No kernel work runs — the
+ * user manipulates the existing bitmap directly. With
+ * :class:`FilterQuality.Low` this looks softly blurred during zoom, not
+ * pixelated, and there's nothing for the system to "snap" between.
  *
- * @param baseViewport the *visible* viewport (NOT the overrendered
- *        one). Gesture math is relative to this. Pass the recipe's
- *        own viewport here.
- * @param overrenderFactor must match the host's overrender — see
- *        :class:`HomeViewModel.OVERRENDER_FACTOR`.
+ * On the **release** of the last finger we compute the new analytic
+ * viewport from the accumulated transform and call ``onCommitViewport``.
+ * The host renders one fresh bitmap at full quality; when it lands the
+ * local transform resets to identity and the user sees a sharp
+ * high-resolution image.
+ *
+ * No intermediate renders, no live-tier vs high-tier swap, no jitter.
+ *
+ * @param baseViewport the viewport the *current* bitmap was rendered
+ *        with. All gesture math is relative to this.
+ * @param onCommitViewport invoked with the new analytic viewport when
+ *        the gesture releases; the host should render a fresh bitmap.
  */
 @Composable
 fun ZoomableFractalImage(
@@ -72,32 +70,20 @@ fun ZoomableFractalImage(
     modifier: Modifier = Modifier,
     aspectRatio: Float = 1f,
     cornerRadius: Dp = 16.dp,
-    debounceMs: Long = 50,
     minScale: Float = 0.25f,
     maxScale: Float = 32f,
-    overrenderFactor: Float = 1.5f,
 ) {
     val shape = RoundedCornerShape(cornerRadius)
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
+    // When a fresh bitmap arrives (rendered for the viewport we asked
+    // for), reset the local transform — gestures from now on are
+    // relative to the new image.
     LaunchedEffect(bitmap) {
         scale = 1f
         offset = Offset.Zero
-    }
-
-    val scope = rememberCoroutineScope()
-    var debounceJob: Job? by remember { mutableStateOf<Job?>(null) }
-
-    fun scheduleCommit() {
-        if (bitmap == null || baseViewport == null || canvasSize == IntSize.Zero) return
-        debounceJob?.cancel()
-        debounceJob = scope.launch {
-            delay(debounceMs)
-            val committed = computeViewport(baseViewport, scale, offset, canvasSize)
-            onCommitViewport(committed)
-        }
     }
 
     Box(
@@ -116,24 +102,18 @@ fun ZoomableFractalImage(
         if (bitmap == null) {
             ShimmerBox(modifier = Modifier.matchParentSize())
         } else {
-            // Inner image is sized to the OVERRENDERED area. Box clips
-            // anything that extends past canvas bounds. Without a
-            // gesture, only the central 1/overrenderFactor² is visible —
-            // exactly the recipe's visible viewport. Drag uncovers
-            // already-rendered margin.
             Image(
                 bitmap = bitmap.asImageBitmap(),
                 contentDescription = contentDescription,
-                contentScale = ContentScale.Fit,
+                contentScale = ContentScale.Crop,
+                // Bilinear filter so optical-only transformation during
+                // a gesture looks soft rather than pixel-mosaic.
                 filterQuality = FilterQuality.Low,
                 modifier = Modifier
                     .matchParentSize()
                     .graphicsLayer {
-                        // Initial scale = overrenderFactor so the
-                        // visible part of the rendered area maps to
-                        // canvas size. User scale stacks on top.
-                        scaleX = overrenderFactor * scale
-                        scaleY = overrenderFactor * scale
+                        scaleX = scale
+                        scaleY = scale
                         translationX = offset.x
                         translationY = offset.y
                     }
@@ -153,6 +133,8 @@ fun ZoomableFractalImage(
                                     val zoomDelta = newScale / scale.coerceAtLeast(1e-6f)
                                     val centerX = w / 2f
                                     val centerY = h / 2f
+                                    // Anchor compensation — the pixel
+                                    // under the centroid stays put.
                                     val anchorDx = (centroid.x - centerX - offset.x) * (1f - zoomDelta)
                                     val anchorDy = (centroid.y - centerY - offset.y) * (1f - zoomDelta)
                                     scale = newScale
@@ -163,10 +145,20 @@ fun ZoomableFractalImage(
                                     if (event.changes.any { it.positionChanged() }) {
                                         event.changes.forEach { it.consume() }
                                     }
-                                    scheduleCommit()
                                 }
                             } while (event.changes.any { it.pressed })
-                            scheduleCommit()
+                            // All fingers up → commit. No debounce here:
+                            // the gesture loop only exits when the last
+                            // pointer lifts, which is the right moment.
+                            if (canvasSize != IntSize.Zero && baseViewport != null) {
+                                val committed = computeViewport(
+                                    base = baseViewport,
+                                    scale = scale,
+                                    offset = offset,
+                                    canvasSize = canvasSize,
+                                )
+                                onCommitViewport(committed)
+                            }
                         }
                     },
             )
@@ -176,11 +168,6 @@ fun ZoomableFractalImage(
 
 /**
  * Convert local (scale, offset) into a fresh analytic viewport.
- *
- * ``base`` here is the *visible* viewport — what the user sees in the
- * canvas right now. The bitmap may extend beyond that into a margin,
- * but the gesture math operates in canvas space, so the visible
- * viewport is the right reference.
  *
  *     screen_centre_in_viewport = base_centre - offset / canvas_w * base_span / scale
  *     new_span                  = base_span / scale

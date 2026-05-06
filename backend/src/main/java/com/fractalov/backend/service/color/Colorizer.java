@@ -46,6 +46,82 @@ public class Colorizer {
     private static final int HIST_QUANTILE_BUCKETS = 1024;
 
     /**
+     * Bounded LUT cache for histogram-mode quantile thresholds. Sized
+     * to fit ~16 distinct recipes — past that the eviction policy
+     * starts mattering, but at 16 entries × 1024 doubles × 8 bytes
+     * the cache itself is ≤ 128 KB. The {@link LinkedHashMap}
+     * access-order constructor gives LRU eviction for free.
+     */
+    private static final int LUT_CACHE_CAPACITY = 16;
+    private static final java.util.Map<HistogramKey, double[]> HISTOGRAM_LUT_CACHE =
+            java.util.Collections.synchronizedMap(
+                    new java.util.LinkedHashMap<>(LUT_CACHE_CAPACITY, 0.75f, /* accessOrder */ true) {
+                        @Override
+                        protected boolean removeEldestEntry(java.util.Map.Entry<HistogramKey, double[]> eldest) {
+                            return size() > LUT_CACHE_CAPACITY;
+                        }
+                    });
+
+    /**
+     * Cheap fingerprint of the escape map used as the cache key. We
+     * never compare full {@code double[][]} contents — instead we
+     * derive a compact tuple (dimensions, escape count, finite
+     * checksum, finite max). Two field stacks colliding under all
+     * four projections AND producing different histograms would be
+     * an extremely contrived recipe; in the worst case the user sees
+     * a faintly wrong colourisation that fixes itself on the next
+     * render. The alternative — full content hashing — would cost
+     * more than the sort it's trying to avoid.
+     */
+    private record HistogramKey(int width, int height, int escapeCount, long checksumBits, long maxBits) {
+        static HistogramKey of(double[][] escape, int escapeCount, int width, int height) {
+            // Single pass to compute the checksum and max in one go.
+            // ``Double.doubleToLongBits`` keeps NaN-collisions stable
+            // across runs (we don't expect NaN here, but better safe).
+            double sumSq = 0.0;
+            double maxV = Double.NEGATIVE_INFINITY;
+            for (double[] row : escape) {
+                for (double v : row) {
+                    if (v < 0.0) continue;
+                    sumSq += v * v;
+                    if (v > maxV) maxV = v;
+                }
+            }
+            return new HistogramKey(
+                    width, height, escapeCount,
+                    Double.doubleToLongBits(sumSq),
+                    Double.doubleToLongBits(maxV));
+        }
+    }
+
+    /**
+     * O(N log N) work that the cache avoids on a hit. Pulled out of
+     * the hot path so the hit branch in {@link #histogramFill} stays
+     * a single map lookup.
+     */
+    private static double[] computeQuantileLut(double[][] escape, int escapeCount) {
+        final double[] sorted = new double[escapeCount];
+        int idx = 0;
+        for (double[] row : escape) {
+            for (double v : row) {
+                if (v >= 0.0) sorted[idx++] = v;
+            }
+        }
+        Arrays.sort(sorted);
+        // Fixed-size LUT: one threshold per bucket. Ties between
+        // adjacent buckets collapse naturally — Arrays.binarySearch
+        // returning the insertion point covers it.
+        final int k = Math.min(HIST_QUANTILE_BUCKETS, escapeCount);
+        final double[] thresholds = new double[k];
+        for (int i = 0; i < k; i++) {
+            int j = (int) ((long) i * escapeCount / k);
+            if (j >= escapeCount) j = escapeCount - 1;
+            thresholds[i] = sorted[j];
+        }
+        return thresholds;
+    }
+
+    /**
      * Multiplier for DE-mode {@code tanh} ramp. Larger value → ramp transitions
      * across more pixels of viewport space → softer boundary, brighter exterior.
      * {@code 8.0} gives a perceptually balanced shading on the standard
@@ -113,25 +189,21 @@ public class Colorizer {
             return;
         }
 
-        final double[] sorted = new double[escapeCount];
-        int idx = 0;
-        for (double[] row : escape) {
-            for (double v : row) {
-                if (v >= 0.0) sorted[idx++] = v;
-            }
+        // Quantile LUT lookup. The expensive part of histogram colour mode
+        // is the O(N log N) sort of every escape value on every render —
+        // a 1024² render with all-escape pixels sorts ~10⁶ doubles every
+        // time. Repeat renders of the same recipe (typical in
+        // benchmarking and live-preview UIs) produce byte-identical
+        // sorted sequences, so we cache the resulting thresholds keyed
+        // on a cheap fingerprint of the escape array.
+        final HistogramKey cacheKey = HistogramKey.of(escape, escapeCount, width, height);
+        double[] cached = HISTOGRAM_LUT_CACHE.get(cacheKey);
+        if (cached == null) {
+            cached = computeQuantileLut(escape, escapeCount);
+            HISTOGRAM_LUT_CACHE.put(cacheKey, cached);
         }
-        Arrays.sort(sorted);
-
-        // Build a fixed-size quantile LUT (one threshold per bucket). Ties between
-        // adjacent buckets collapse naturally — Arrays.binarySearch returning the
-        // insertion point covers it.
-        final int k = Math.min(HIST_QUANTILE_BUCKETS, escapeCount);
-        final double[] thresholds = new double[k];
-        for (int i = 0; i < k; i++) {
-            int j = (int) ((long) i * escapeCount / k);
-            if (j >= escapeCount) j = escapeCount - 1;
-            thresholds[i] = sorted[j];
-        }
+        final double[] thresholds = cached;
+        final int k = thresholds.length;
         final double denomT = k > 1 ? (k - 1) : 1.0;
 
         IntStream.range(0, height).parallel().forEach(y -> {
